@@ -13,7 +13,7 @@ const cors = require('cors');
 const app = express();
 app.use(morgan('dev'));
 
-const allowed = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || '')
+const allowed = ( process.env.FRONTEND_URL)
   .split(',')
   .map((s) => s.trim().replace(/\/$/, ''))
   .filter(Boolean);
@@ -97,4 +97,3 @@ mongoose.connect(process.env.MONGODB_URI)
     app.listen(PORT, () => console.log(`🚀 Backend @ http://127.0.0.1:${PORT}`));
   })
   .catch(err => console.log(err.message));
-
