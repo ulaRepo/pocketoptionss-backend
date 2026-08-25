@@ -1,4 +1,4 @@
-const express = require('express');
+ const express = require('express');
 const createHttpError = require('http-errors');
 const morgan = require('morgan');
 const mongoose = require('mongoose');
@@ -13,16 +13,9 @@ const cors = require('cors');
 const app = express();
 app.use(morgan('dev'));
 
-const allowed = ( process.env.FRONTEND_URL)
-  .split(',')
-  .map((s) => s.trim().replace(/\/$/, ''))
-  .filter(Boolean);
-
+// 1) CORS first — origin must match address bar exactly
 app.use(cors({
-  origin(origin, cb) {
-    if (!origin || allowed.includes(origin)) return cb(null, true);
-    return cb(new Error('Not allowed by CORS'));
-  },
+  origin: process.env.FRONTEND_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -33,7 +26,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 const MongoStore = connectMongo(session);
-app.set('trust proxy', 1); // required on Render (HTTPS proxy)
 
 app.use(session({
   name: 'connect.sid',
@@ -42,8 +34,8 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    sameSite: 'none',   // cross-site: Netlify domain → Render
-    secure: true,       // required with SameSite=None (you are on HTTPS)
+    sameSite: 'none',
+    secure: true,
     maxAge: 24 * 60 * 60 * 1000,
     path: '/'
   },
@@ -97,3 +89,6 @@ mongoose.connect(process.env.MONGODB_URI)
     app.listen(PORT, () => console.log(`🚀 Backend @ http://127.0.0.1:${PORT}`));
   })
   .catch(err => console.log(err.message));
+
+
+
