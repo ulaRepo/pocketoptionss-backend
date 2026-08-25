@@ -13,9 +13,16 @@ const cors = require('cors');
 const app = express();
 app.use(morgan('dev'));
 
-// 1) CORS first — origin must match address bar exactly
+const allowed = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((s) => s.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
+  origin(origin, cb) {
+    if (!origin || allowed.includes(origin)) return cb(null, true);
+    return cb(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -26,6 +33,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 const MongoStore = connectMongo(session);
+app.set('trust proxy', 1); // required on Render (HTTPS proxy)
 
 app.use(session({
   name: 'connect.sid',
@@ -34,8 +42,8 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: false,
+    sameSite: 'none',   // cross-site: Netlify domain → Render
+    secure: true,       // required with SameSite=None (you are on HTTPS)
     maxAge: 24 * 60 * 60 * 1000,
     path: '/'
   },
