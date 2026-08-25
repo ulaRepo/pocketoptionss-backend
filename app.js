@@ -5,27 +5,43 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 const session = require('express-session');
 const connectFlash = require('connect-flash');
-const passport = require('passport');
 const connectMongo = require('connect-mongo');
-const { roles } = require('./utils/constants');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const { requireAuth, requireAdmin, checkUser } = require('./utils/authMiddleware');
 
 const app = express();
 app.use(morgan('dev'));
 
+function normalizeOrigin(url) {
+  if (!url) return null;
+  return String(url).trim().replace(/\/$/, '');
+}
+
+const allowedOrigins = [normalizeOrigin(process.env.FRONTEND_URL)].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    const normalized = normalizeOrigin(origin);
+    if (allowedOrigins.includes(normalized)) {
+      return callback(null, true);
+    }
+    console.warn('CORS blocked origin:', origin);
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }));
+
+app.use(cookieParser());
 app.use(express.static('public'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 const MongoStore = connectMongo(session);
 app.set('trust proxy', 1); // required on Render (HTTPS proxy)
-
 app.use(session({
   name: 'connect.sid',
   secret: process.env.SESSION_SECRET,
@@ -41,39 +57,25 @@ app.use(session({
   store: new MongoStore({ mongooseConnection: mongoose.connection })
 }));
 
-app.use(passport.initialize());
-app.use(passport.session());
-require('./utils/passport.auth');
-
-app.use((req, res, next) => {
-  res.locals.user = req.user;
-  next();
-});
-
 app.use(connectFlash());
 app.use((req, res, next) => {
   res.locals.messages = req.flash();
   next();
 });
 
-function ensureAuthJSON(req, res, next) {
-  if (req.isAuthenticated && req.isAuthenticated()) return next();
-  return res.status(401).json({ error: 'Not authenticated' });
-}
-
-function ensureAdmin(req, res, next) {
-  if (req.user && req.user.role === roles.admin) return next();
-  return res.status(403).json({ error: 'Not authorized' });
-}
+app.use(checkUser);
 
 app.use('/', require('./routes/index.route'));
 app.use('/auth', require('./routes/auth.route'));
-app.use('/user', ensureAuthJSON, require('./routes/user.route'));
-app.use('/admin', ensureAuthJSON, ensureAdmin, require('./routes/admin.route'));
+app.use('/user', requireAuth, require('./routes/user.route'));
+app.use('/admin', requireAuth, requireAdmin, require('./routes/admin.route'));
 
 app.use((req, res, next) => next(createHttpError.NotFound()));
 
 app.use((error, req, res, next) => {
+  if (error.message === 'Not allowed by CORS') {
+    return res.status(403).json({ error: error.message, success: false });
+  }
   error.status = error.status || 500;
   res.status(error.status).json({
     error: error.message || 'Internal Server Error',
@@ -88,4 +90,3 @@ mongoose.connect(process.env.MONGODB_URI)
     app.listen(PORT, () => console.log(`🚀 Backend @ http://127.0.0.1:${PORT}`));
   })
   .catch(err => console.log(err.message));
-
